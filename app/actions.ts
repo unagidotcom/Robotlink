@@ -13,8 +13,33 @@ import { csvMappingSchema, validateImportRow, type ValidatedImportRow } from "@/
 import { MAX_CSV_BYTES, parseCsv } from "@/lib/imports/csv";
 import { getInspectionConfig } from "@/lib/inspection/config";
 import { enqueueInspection } from "@/lib/inspection/queue";
+import { getRankingConfig } from "@/lib/ranking/config";
+import { enqueueRanking } from "@/lib/ranking/queue";
 
 export type ActionState = { ok?: boolean; error?: string; batchId?: string };
+
+export async function enqueueRankingAction(contentKeywordId: string, agencyId: string): Promise<void> {
+  const viewer = await requireViewer(agencyId); requirePermission(viewer.role, "ranking:write");
+  const target = await prisma.contentKeyword.findFirst({ where: { id: contentKeywordId, active: true, content: { agencyId: viewer.agencyId, archivedAt: null } }, include: { content: { select: { id: true, clientId: true } } } });
+  if (!target) throw new Error("NOT_FOUND");
+  const active = await prisma.rankingJob.findFirst({ where: { contentKeywordId, status: { in: ["PENDING", "RUNNING"] } }, select: { id: true } });
+  if (!active) await enqueueRanking({ agencyId: viewer.agencyId, clientId: target.content.clientId, contentKeywordId, requestedById: viewer.userId }, getRankingConfig());
+  await prisma.auditEvent.create({ data: { agencyId: viewer.agencyId, actorType: "USER", actorUserId: viewer.userId, action: "ranking.check_queued", targetType: "content", targetId: target.content.id } });
+  revalidatePath(`/content/${target.content.id}`);
+}
+
+export async function updateRankingTargetAction(contentKeywordId: string, agencyId: string, formData: FormData): Promise<void> {
+  const viewer = await requireViewer(agencyId); requirePermission(viewer.role, "ranking:write");
+  const target = await prisma.contentKeyword.findFirst({ where: { id: contentKeywordId, content: { agencyId: viewer.agencyId, archivedAt: null } }, include: { content: { select: { id: true } } } });
+  if (!target) throw new Error("NOT_FOUND");
+  const frequency = Math.max(60, Math.min(43_200, Number(formData.get("frequency") ?? 1440)));
+  const priority = Math.max(0, Math.min(100, Number(formData.get("priority") ?? 0)));
+  const depth = Math.max(10, Math.min(100, Number(formData.get("depth") ?? 10)));
+  const active = formData.get("active") === "on";
+  await prisma.contentKeyword.update({ where: { id: target.id }, data: { checkFrequencyMinutes: frequency, priority, maxResultDepth: depth, active, nextCheckAt: active ? target.nextCheckAt : null } });
+  await prisma.auditEvent.create({ data: { agencyId: viewer.agencyId, actorType: "USER", actorUserId: viewer.userId, action: "ranking.target_updated", targetType: "content", targetId: target.content.id, sanitizedData: { frequency, priority, depth, active } } });
+  revalidatePath(`/content/${target.content.id}`);
+}
 
 export async function enqueueInspectionAction(contentId: string, agencyId: string): Promise<void> {
   const viewer = await requireViewer(agencyId); requirePermission(viewer.role, "inspection:write");
@@ -64,13 +89,21 @@ export async function createClientAction(_state: ActionState, formData: FormData
 }
 
 async function syncKeywords(tx: Prisma.TransactionClient, contentId: string, agencyId: string, keywords: string[], target: { countryCode: string; languageCode: string; device: "DESKTOP" | "MOBILE" }) {
-  await tx.contentKeyword.deleteMany({ where: { contentId } });
-  for (const phrase of [...new Set(keywords.map(normalizeKeyword).filter(Boolean))].slice(0, 50)) {
+  const phrases = [...new Set(keywords.map(normalizeKeyword).filter(Boolean))].slice(0, 50);
+  const active = await tx.contentKeyword.findMany({ where: { contentId, active: true }, include: { keyword: true } });
+  for (const prior of active) if (!phrases.includes(prior.keyword.normalizedPhrase) || prior.countryCode !== target.countryCode || prior.languageCode !== target.languageCode || prior.device !== target.device) {
+    await tx.contentKeyword.update({ where: { id: prior.id }, data: { active: false, supersededAt: new Date(), nextCheckAt: null } });
+  }
+  for (const phrase of phrases) {
     const keyword = await tx.keyword.upsert({
       where: { agencyId_normalizedPhrase: { agencyId, normalizedPhrase: phrase } },
       create: { agencyId, normalizedPhrase: phrase, displayPhrase: phrase }, update: {},
     });
-    await tx.contentKeyword.create({ data: { contentId, keywordId: keyword.id, ...target } });
+    const existing = active.find((entry) => entry.keywordId === keyword.id && entry.countryCode === target.countryCode && entry.languageCode === target.languageCode && entry.device === target.device);
+    if (!existing) {
+      const latest = await tx.contentKeyword.findFirst({ where: { contentId, keywordId: keyword.id, ...target }, orderBy: { version: "desc" }, select: { version: true } });
+      await tx.contentKeyword.create({ data: { contentId, keywordId: keyword.id, ...target, version: (latest?.version ?? 0) + 1 } });
+    }
   }
 }
 

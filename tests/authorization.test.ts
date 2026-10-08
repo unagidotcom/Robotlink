@@ -6,6 +6,9 @@ describe("authorization", () => {
   it("keeps viewers read-only", () => {
     expect(hasPermission("VIEWER", "content:read")).toBe(true);
     expect(hasPermission("VIEWER", "content:write")).toBe(false);
+    expect(hasPermission("VIEWER", "ranking:write")).toBe(false);
+    expect(hasPermission("ANALYST", "ranking:write")).toBe(false);
+    expect(hasPermission("STRATEGIST", "ranking:write")).toBe(true);
   });
 
   it("does not expose cross-agency resources", () => {

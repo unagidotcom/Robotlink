@@ -179,25 +179,59 @@ enum InspectionOutcome {
   UNKNOWN
 }
 
+enum RankingJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  DEAD_LETTER
+  BUDGET_BLOCKED
+}
+
+enum RankingAttemptStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  LEASE_EXPIRED
+}
+
+enum RankingObservationStatus {
+  RANKED
+  NOT_FOUND_WITHIN_DEPTH
+  PROVIDER_ERROR
+  CHECK_NOT_PERFORMED
+  INSUFFICIENT_EVIDENCE
+}
+
+enum RankingMatchClassification {
+  EXACT
+  VERIFIED_EQUIVALENT
+  POSSIBLE
+  NO_MATCH
+}
+
 model Agency {
-  id                String                @id @default(uuid()) @db.Uuid
-  name              String
-  slug              String                @unique
-  defaultTimezone   String                @default("UTC")
-  defaultCurrency   String                @default("USD") @db.VarChar(3)
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-  memberships       AgencyMembership[]
-  clients           Client[]
-  publisherAccounts PublisherAccount[]
-  contents          Content[]
-  keywords          Keyword[]
-  budgets           MonitoringBudget[]
-  auditEvents       AuditEvent[]
-  statusHistory     StatusHistory[]
-  importBatches     ImportBatch[]
-  inspectionJobs    InspectionJob[]
-  inspections       TechnicalInspection[]
+  id                  String                @id @default(uuid()) @db.Uuid
+  name                String
+  slug                String                @unique
+  defaultTimezone     String                @default("UTC")
+  defaultCurrency     String                @default("USD") @db.VarChar(3)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  memberships         AgencyMembership[]
+  clients             Client[]
+  publisherAccounts   PublisherAccount[]
+  contents            Content[]
+  keywords            Keyword[]
+  budgets             MonitoringBudget[]
+  auditEvents         AuditEvent[]
+  statusHistory       StatusHistory[]
+  importBatches       ImportBatch[]
+  inspectionJobs      InspectionJob[]
+  inspections         TechnicalInspection[]
+  rankingJobs         RankingJob[]
+  rankingObservations RankingObservation[]
 }
 
 model User {
@@ -213,6 +247,7 @@ model User {
   sessions             Session[]
   auditEvents          AuditEvent[]       @relation("AuditUser")
   requestedInspections InspectionJob[]    @relation("InspectionRequestedBy")
+  requestedRankings    RankingJob[]       @relation("RankingRequestedBy")
 }
 
 model AgencyMembership {
@@ -272,6 +307,8 @@ model Client {
   importBatches       ImportBatch[]
   inspectionJobs      InspectionJob[]
   inspections         TechnicalInspection[]
+  rankingJobs         RankingJob[]
+  rankingObservations RankingObservation[]
 
   @@unique([agencyId, name])
   @@index([agencyId, active])
@@ -347,6 +384,7 @@ model Content {
   importRows            ImportRow[]
   inspectionJobs        InspectionJob[]
   inspections           TechnicalInspection[]
+  rankingObservations   RankingObservation[]
 
   @@unique([clientId, dedupeHash])
   @@index([agencyId, clientId, platform])
@@ -524,21 +562,120 @@ model Keyword {
 }
 
 model ContentKeyword {
-  id             String     @id @default(uuid()) @db.Uuid
-  contentId      String     @db.Uuid
-  keywordId      String     @db.Uuid
-  countryCode    String     @db.VarChar(2)
-  languageCode   String     @db.VarChar(10)
-  device         DeviceType
-  active         Boolean    @default(true)
-  maxResultDepth Int        @default(10)
-  lastCheckedAt  DateTime?
-  nextCheckAt    DateTime?
-  content        Content    @relation(fields: [contentId], references: [id], onDelete: Cascade)
-  keyword        Keyword    @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  id                    String               @id @default(uuid()) @db.Uuid
+  contentId             String               @db.Uuid
+  keywordId             String               @db.Uuid
+  countryCode           String               @db.VarChar(2)
+  languageCode          String               @db.VarChar(10)
+  device                DeviceType
+  active                Boolean              @default(true)
+  maxResultDepth        Int                  @default(10)
+  lastCheckedAt         DateTime?
+  nextCheckAt           DateTime?
+  checkFrequencyMinutes Int                  @default(1440)
+  priority              Int                  @default(0)
+  version               Int                  @default(1)
+  supersededAt          DateTime?
+  content               Content              @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  keyword               Keyword              @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  rankingJobs           RankingJob[]
+  observations          RankingObservation[]
 
-  @@unique([contentId, keywordId, countryCode, languageCode, device])
+  @@unique([contentId, keywordId, countryCode, languageCode, device, version], map: "ContentKeyword_tracking_version_key")
   @@index([active, nextCheckAt])
+}
+
+model RankingJob {
+  id                String               @id @default(uuid()) @db.Uuid
+  agencyId          String               @db.Uuid
+  clientId          String               @db.Uuid
+  contentKeywordId  String               @db.Uuid
+  requestedById     String?              @db.Uuid
+  providerCode      String               @db.VarChar(50)
+  searchEngine      String               @default("google") @db.VarChar(30)
+  keyword           String               @db.VarChar(700)
+  countryCode       String               @db.VarChar(2)
+  languageCode      String               @db.VarChar(10)
+  device            DeviceType
+  depth             Int                  @default(10)
+  queryHash         String               @db.Char(64)
+  sharedRequestKey  String               @db.Char(64)
+  idempotencyKey    String               @unique @db.Char(64)
+  status            RankingJobStatus     @default(PENDING)
+  priority          Int                  @default(0)
+  attemptCount      Int                  @default(0)
+  maxAttempts       Int                  @default(3)
+  estimatedMinor    BigInt               @default(0)
+  currency          String               @default("USD") @db.VarChar(3)
+  availableAt       DateTime             @default(now())
+  leaseOwner        String?              @db.VarChar(200)
+  leaseExpiresAt    DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  lastErrorCategory String?              @db.VarChar(80)
+  lastErrorMessage  String?              @db.VarChar(500)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  agency            Agency               @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client            Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contentKeyword    ContentKeyword       @relation(fields: [contentKeywordId], references: [id], onDelete: Cascade)
+  requestedBy       User?                @relation("RankingRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  attempts          RankingAttempt[]
+  observations      RankingObservation[]
+
+  @@index([status, availableAt, priority])
+  @@index([agencyId, clientId, status, createdAt])
+  @@index([sharedRequestKey, status])
+}
+
+model RankingAttempt {
+  id             String               @id @default(uuid()) @db.Uuid
+  jobId          String               @db.Uuid
+  attemptNumber  Int
+  workerId       String               @db.VarChar(200)
+  status         RankingAttemptStatus @default(RUNNING)
+  leaseExpiresAt DateTime
+  startedAt      DateTime             @default(now())
+  finishedAt     DateTime?
+  errorCategory  String?              @db.VarChar(80)
+  errorMessage   String?              @db.VarChar(500)
+  job            RankingJob           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, attemptNumber])
+  @@index([status, leaseExpiresAt])
+}
+
+model RankingObservation {
+  id                  String                     @id @default(uuid()) @db.Uuid
+  agencyId            String                     @db.Uuid
+  clientId            String                     @db.Uuid
+  contentId           String                     @db.Uuid
+  contentKeywordId    String                     @db.Uuid
+  jobId               String                     @db.Uuid
+  providerCode        String                     @db.VarChar(50)
+  checkedAt           DateTime
+  status              RankingObservationStatus
+  observedRank        Int?
+  matchedResultUrl    String?                    @db.Text
+  matchClassification RankingMatchClassification
+  searchDepth         Int
+  providerRequestId   String?                    @db.VarChar(255)
+  evidenceMetadata    Json
+  estimatedMinor      BigInt
+  actualMinor         BigInt?
+  currency            String                     @db.VarChar(3)
+  errorCategory       String?                    @db.VarChar(80)
+  errorMessage        String?                    @db.VarChar(500)
+  createdAt           DateTime                   @default(now())
+  agency              Agency                     @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  client              Client                     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  content             Content                    @relation(fields: [contentId], references: [id], onDelete: Restrict)
+  contentKeyword      ContentKeyword             @relation(fields: [contentKeywordId], references: [id], onDelete: Restrict)
+  job                 RankingJob                 @relation(fields: [jobId], references: [id], onDelete: Restrict)
+
+  @@index([jobId, contentKeywordId])
+  @@index([agencyId, clientId, checkedAt])
+  @@index([contentKeywordId, checkedAt])
 }
 
 model ContentPermission {

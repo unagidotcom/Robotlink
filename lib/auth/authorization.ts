@@ -7,13 +7,14 @@ export type Permission =
   | "content:read"
   | "content:write"
   | "inspection:write"
+  | "ranking:write"
   | "audit:read"
   | "budget:manage";
 
 const permissions: Record<AgencyRole, ReadonlySet<Permission>> = {
-  OWNER: new Set(["agency:manage", "client:read", "client:write", "content:read", "content:write", "inspection:write", "audit:read", "budget:manage"]),
-  ADMINISTRATOR: new Set(["client:read", "client:write", "content:read", "content:write", "inspection:write", "audit:read", "budget:manage"]),
-  STRATEGIST: new Set(["client:read", "content:read", "content:write", "inspection:write", "audit:read"]),
+  OWNER: new Set(["agency:manage", "client:read", "client:write", "content:read", "content:write", "inspection:write", "ranking:write", "audit:read", "budget:manage"]),
+  ADMINISTRATOR: new Set(["client:read", "client:write", "content:read", "content:write", "inspection:write", "ranking:write", "audit:read", "budget:manage"]),
+  STRATEGIST: new Set(["client:read", "content:read", "content:write", "inspection:write", "ranking:write", "audit:read"]),
   ANALYST: new Set(["client:read", "content:read", "audit:read"]),
   VIEWER: new Set(["client:read", "content:read"]),
 };

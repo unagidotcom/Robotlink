@@ -23,11 +23,17 @@ export interface RankingRequest {
   languageCode: string;
   device: "desktop" | "mobile";
   depth: number;
+  searchEngine?: "google";
+  locationCode?: number;
 }
 
 export interface RankingResult {
   observedAt: Date;
   results: ReadonlyArray<{ position: number; url: string; title?: string }>;
+  providerRequestId?: string;
+  actualCostMinor?: bigint;
+  currency?: string;
+  incomplete?: boolean;
 }
 
 export type RankingProvider = MonitoringProvider<RankingRequest, RankingResult>;

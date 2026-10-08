@@ -56,7 +56,7 @@ export async function claimInspectionJob(workerId: string, config: InspectionCon
     await tx.inspectionOriginState.upsert({ where: { origin: job.origin }, create: { origin: job.origin, lastRequestedAt: new Date(), nextAllowedAt: new Date(Date.now() + config.INSPECTION_ORIGIN_DELAY_MS) },
       update: { lastRequestedAt: new Date(), nextAllowedAt: new Date(Date.now() + config.INSPECTION_ORIGIN_DELAY_MS) } });
     return job;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 15_000, timeout: 30_000 });
 }
 
 export function retryDelay(attempt: number): number { return Math.min(300_000, 2 ** Math.max(0, attempt - 1) * 5_000); }

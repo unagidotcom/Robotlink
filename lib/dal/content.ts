@@ -42,10 +42,11 @@ export async function getContentDetail(viewer: Viewer, id: string) {
     include: {
       client: { select: { id: true, name: true } },
       publisherAccount: { select: { id: true, displayName: true, platform: true } },
-      keywords: { include: { keyword: true }, orderBy: { keyword: { displayPhrase: "asc" } } },
+      keywords: { include: { keyword: true, rankingJobs: { orderBy: { createdAt: "desc" }, take: 5 } }, orderBy: { keyword: { displayPhrase: "asc" } } },
       permissions: true,
       inspectionJobs: { orderBy: { createdAt: "desc" }, take: 10, include: { attempts: { orderBy: { attemptNumber: "desc" }, take: 5 } } },
       inspections: { orderBy: { inspectedAt: "desc" }, take: 20, include: { redirects: { orderBy: { sequence: "asc" } } } },
+      rankingObservations: { orderBy: { checkedAt: "desc" }, take: 100, include: { contentKeyword: { include: { keyword: true } } } },
     },
   });
 }

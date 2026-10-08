@@ -1,6 +1,6 @@
 # Article SEO Visibility Platform
 
-Phase A establishes the secure, tenant-aware foundation. Phase B1 adds content management and imports. Phase B2 adds a durable technical-inspection queue, a separately runnable SSRF-hardened worker, immutable evidence, and inspection history in the authenticated content view.
+Phase A establishes the secure foundation, B1 adds content management, B2 adds technical inspection, and Phase C adds provider-neutral keyword ranking jobs and append-only observations.
 
 ## Current boundaries
 
@@ -20,6 +20,7 @@ Requirements: Node.js 20.9+ and PostgreSQL 15+.
 6. Remove the bootstrap password from the environment.
 7. Run `npm run dev`.
 8. In a separate process, run `npm run worker:inspection` when technical jobs should be processed.
+9. After creating explicit monitoring budgets and deliberately enabling a provider, run `npm run worker:ranking` separately. Paid execution defaults to disabled.
 
 ## Verification
 
