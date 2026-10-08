@@ -12,7 +12,7 @@ import { NORMALIZATION_VERSION, normalizeContentUrl, normalizeKeyword } from "@/
 import { csvMappingSchema, validateImportRow, type ValidatedImportRow } from "@/lib/imports/validation";
 import { MAX_CSV_BYTES, parseCsv } from "@/lib/imports/csv";
 import { getInspectionConfig } from "@/lib/inspection/config";
-import { enqueueInspection } from "@/lib/inspection/queue";
+import { enqueueInspection, scheduleImportedInspections } from "@/lib/inspection/queue";
 import { getRankingConfig } from "@/lib/ranking/config";
 import { enqueueRanking } from "@/lib/ranking/queue";
 
@@ -296,6 +296,15 @@ export async function confirmImportAction(batchId: string, agencyId: string): Pr
     await tx.auditEvent.create({ data: { agencyId: viewer.agencyId, actorType: "USER", actorUserId: viewer.userId,
       action: "import.completed", targetType: "import_batch", targetId: batch.id, sanitizedData: { importedRows: imported } } });
   }, { timeout: 60_000 });
+  const inspectionConfig = getInspectionConfig();
+  if (inspectionConfig.AUTO_INSPECT_CONFIRMED_IMPORTS) {
+    const imported = await prisma.importRow.findMany({ where: { importBatchId: batchId, status: "IMPORTED", importBatch: { agencyId: viewer.agencyId } }, select: { content: { select: { id: true, clientId: true } } } });
+    const grouped = new Map<string, Array<{ id: string; clientId: string }>>();
+    for (const row of imported) if (row.content) grouped.set(row.content.clientId, [...(grouped.get(row.content.clientId) ?? []), row.content]);
+    let scheduled = 0;
+    for (const [clientId, contents] of grouped) scheduled += await scheduleImportedInspections({ agencyId: viewer.agencyId, clientId, contentIds: contents.map((content) => content.id), requestedById: viewer.userId }, inspectionConfig);
+    await prisma.auditEvent.create({ data: { agencyId: viewer.agencyId, actorType: "SYSTEM", action: "import.inspections_scheduled", targetType: "import_batch", targetId: batchId, sanitizedData: { scheduled } } });
+  }
   revalidatePath("/imports");
   redirect(`/imports/${batchId}`);
 }

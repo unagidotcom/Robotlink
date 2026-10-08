@@ -23,6 +23,18 @@ export async function enqueueInspection(input: { agencyId: string; clientId: str
   });
 }
 
+export async function scheduleImportedInspections(input: { agencyId: string; clientId: string; contentIds: string[]; requestedById?: string }, config: InspectionConfig): Promise<number> {
+  const uniqueIds = [...new Set(input.contentIds)].slice(0, config.INSPECTION_QUEUE_LIMIT_PER_CLIENT);
+  const [contents, queued] = await Promise.all([
+    prisma.content.findMany({ where: { id: { in: uniqueIds }, agencyId: input.agencyId, clientId: input.clientId, archivedAt: null }, select: { id: true, normalizedUrl: true } }),
+    prisma.inspectionJob.count({ where: { agencyId: input.agencyId, clientId: input.clientId, status: { in: ["PENDING", "RUNNING"] } } }),
+  ]);
+  const capacity = Math.max(0, config.INSPECTION_QUEUE_LIMIT_PER_CLIENT - queued);
+  const data = contents.slice(0, capacity).map((content) => ({ agencyId: input.agencyId, clientId: input.clientId, contentId: content.id, requestedById: input.requestedById,
+    idempotencyKey: inspectionKey(content.id, content.normalizedUrl), origin: new URL(content.normalizedUrl).origin }));
+  const result = await prisma.inspectionJob.createMany({ data, skipDuplicates: true }); return result.count;
+}
+
 export async function recoverExpiredLeases(now = new Date()): Promise<number> {
   const expired = await prisma.inspectionJob.findMany({ where: { status: "RUNNING", leaseExpiresAt: { lt: now } }, select: { id: true, attemptCount: true, maxAttempts: true } });
   for (const job of expired) await prisma.$transaction([

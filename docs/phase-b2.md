@@ -14,4 +14,6 @@ Inspection evidence updates only `Content.technicalStatus` and `lastVerifiedAt`.
 
 Run `npm run worker:inspection` in a private worker service using the same least-privilege database role as the application. Configure the `INSPECTION_*` variables documented in `.env.example`. The queue has client capacity limits, global and per-client running limits, per-origin pacing, leases, exponential retry backoff, and a dead-letter terminal state.
 
+Confirmed CSV imports enqueue one idempotent inspection job per newly imported content record when `AUTO_INSPECT_CONFIRMED_IMPORTS=true`. Previewing a CSV never schedules work, and duplicate or rejected rows are never queued.
+
 Evidence rows are append-only in normal application flows. Safe error categories and bounded messages are persisted; response bodies and secrets are not. The retained raw JSON contains only structured observations.

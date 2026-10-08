@@ -14,6 +14,7 @@ const workerSchema = z.object({
   INSPECTION_MAX_REDIRECTS: z.coerce.number().int().min(0).max(10).default(5),
   INSPECTION_EVIDENCE_TTL_HOURS: z.coerce.number().int().min(1).max(2160).default(168),
   INSPECTION_USER_AGENT: z.string().min(10).max(300).default("RobotlinkTechnicalInspector/1.0 (+https://robotlink.invalid/inspector)"),
+  AUTO_INSPECT_CONFIRMED_IMPORTS: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
 });
 
 export type InspectionConfig = z.infer<typeof workerSchema>;
