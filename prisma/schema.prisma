@@ -1,0 +1,485 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AgencyRole {
+  OWNER
+  ADMINISTRATOR
+  STRATEGIST
+  ANALYST
+  VIEWER
+}
+
+enum PlatformCode {
+  MEDIUM
+  INSTAGRAM
+  WORDPRESS_COM
+  BLOGGER
+  SUBSTACK
+  LINKEDIN
+  PUBLIC_PDF
+  GENERIC
+}
+
+enum ContentType {
+  ARTICLE
+  POST
+  REEL
+  PDF
+  OTHER
+}
+
+enum PublicationStatus {
+  DRAFT
+  PUBLISHED
+  UNPUBLISHED
+  REMOVED
+  UNKNOWN
+}
+
+enum EvidenceStatus {
+  CONFIRMED
+  INDICATION_ONLY
+  NOT_OBSERVED
+  UNAVAILABLE
+  ERROR
+  UNKNOWN
+}
+
+enum TechnicalStatus {
+  PENDING
+  ACCESSIBLE
+  REDIRECTED
+  BLOCKED
+  NOINDEX_SIGNAL
+  CANONICALIZED_ELSEWHERE
+  UNREACHABLE
+  ERROR
+  UNKNOWN
+}
+
+enum VisibilityStatus {
+  RANKED
+  PARTIALLY_RANKED
+  NOT_OBSERVED_WITHIN_DEPTH
+  CHECK_PENDING
+  STALE
+  ERROR
+  UNKNOWN
+}
+
+enum PromotionStatus {
+  NONE
+  SUGGESTED
+  APPROVED
+  SCHEDULED
+  PLACED
+  VERIFIED
+  REMOVED
+  UNKNOWN
+}
+
+enum RevenueAvailability {
+  CURRENT
+  PARTIAL
+  STALE
+  IMPORT_REQUIRED
+  UNAUTHORIZED
+  UNSUPPORTED
+  ERROR
+  UNKNOWN
+}
+
+enum PermissionStatus {
+  ALLOWED
+  DENIED
+  UNKNOWN
+  EXPIRED
+}
+
+enum CapabilitySupport {
+  SUPPORTED
+  PARTIAL
+  UNSUPPORTED
+  UNKNOWN
+}
+
+enum DeviceType {
+  DESKTOP
+  MOBILE
+}
+
+enum SessionEndReason {
+  LOGOUT
+  EXPIRED
+  REVOKED
+  PASSWORD_CHANGED
+  USER_DISABLED
+}
+
+enum BudgetPeriod {
+  DAILY
+  MONTHLY
+}
+
+enum BudgetScope {
+  AGENCY
+  CLIENT
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+  WORKER
+  INTEGRATION
+}
+
+enum ImportStatus {
+  PREVIEWED
+  IMPORTING
+  COMPLETED
+  FAILED
+}
+
+enum ImportRowStatus {
+  VALID
+  DUPLICATE
+  REJECTED
+  IMPORTED
+}
+
+model Agency {
+  id                String             @id @default(uuid()) @db.Uuid
+  name              String
+  slug              String             @unique
+  defaultTimezone   String             @default("UTC")
+  defaultCurrency   String             @default("USD") @db.VarChar(3)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  memberships       AgencyMembership[]
+  clients           Client[]
+  publisherAccounts PublisherAccount[]
+  contents          Content[]
+  keywords          Keyword[]
+  budgets           MonitoringBudget[]
+  auditEvents       AuditEvent[]
+  statusHistory     StatusHistory[]
+  importBatches     ImportBatch[]
+}
+
+model User {
+  id           String             @id @default(uuid()) @db.Uuid
+  email        String             @unique
+  displayName  String?
+  passwordHash String
+  disabledAt   DateTime?
+  lastLoginAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  memberships  AgencyMembership[]
+  sessions     Session[]
+  auditEvents  AuditEvent[]       @relation("AuditUser")
+}
+
+model AgencyMembership {
+  agencyId  String     @db.Uuid
+  userId    String     @db.Uuid
+  role      AgencyRole
+  createdAt DateTime   @default(now())
+  agency    Agency     @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([agencyId, userId])
+  @@index([userId])
+}
+
+model Session {
+  id         String            @id @default(uuid()) @db.Uuid
+  userId     String            @db.Uuid
+  tokenHash  String            @unique @db.Char(64)
+  expiresAt  DateTime
+  lastSeenAt DateTime          @default(now())
+  endedAt    DateTime?
+  endReason  SessionEndReason?
+  ipHash     String?           @db.Char(64)
+  userAgent  String?           @db.VarChar(500)
+  createdAt  DateTime          @default(now())
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model LoginThrottle {
+  keyHash       String    @id @db.Char(64)
+  failureCount  Int       @default(0)
+  windowStarted DateTime  @default(now())
+  blockedUntil  DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  @@index([blockedUntil])
+}
+
+model Client {
+  id                  String             @id @default(uuid()) @db.Uuid
+  agencyId            String             @db.Uuid
+  name                String
+  externalReference   String?
+  defaultCountryCode  String?            @db.VarChar(2)
+  defaultLanguageCode String?            @db.VarChar(10)
+  defaultDevice       DeviceType         @default(DESKTOP)
+  defaultCurrency     String             @default("USD") @db.VarChar(3)
+  active              Boolean            @default(true)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  agency              Agency             @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  contents            Content[]
+  publisherAccounts   PublisherAccount[]
+  budgets             MonitoringBudget[]
+  importBatches       ImportBatch[]
+
+  @@unique([agencyId, name])
+  @@index([agencyId, active])
+}
+
+model PublisherAccount {
+  id                  String              @id @default(uuid()) @db.Uuid
+  agencyId            String              @db.Uuid
+  clientId            String              @db.Uuid
+  platform            PlatformCode
+  displayName         String
+  externalAccountId   String?
+  authorizationStatus PermissionStatus    @default(UNKNOWN)
+  credentialReference String?
+  grantedScopes       String[]
+  verifiedAt          DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  agency              Agency              @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client              Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contents            Content[]
+  permissions         ContentPermission[]
+
+  @@index([agencyId, clientId, platform])
+}
+
+model PlatformCapability {
+  id                 String            @id @default(uuid()) @db.Uuid
+  platform           PlatformCode
+  capabilityCode     String
+  supportLevel       CapabilitySupport
+  verificationMethod String?
+  notes              String?
+  validFrom          DateTime          @default(now())
+  validTo            DateTime?
+
+  @@unique([platform, capabilityCode, validFrom])
+  @@index([platform, capabilityCode, validTo])
+}
+
+model Content {
+  id                    String              @id @default(uuid()) @db.Uuid
+  agencyId              String              @db.Uuid
+  clientId              String              @db.Uuid
+  publisherAccountId    String?             @db.Uuid
+  originalUrl           String              @db.Text
+  normalizedUrl         String              @db.Text
+  dedupeHash            String              @db.Char(64)
+  normalizationVersion  Int                 @default(1)
+  platform              PlatformCode
+  contentType           ContentType
+  title                 String?
+  description           String?             @db.Text
+  publishedAt           DateTime?
+  publicationStatus     PublicationStatus   @default(UNKNOWN)
+  technicalStatus       TechnicalStatus     @default(UNKNOWN)
+  indexingEvidence      EvidenceStatus      @default(UNKNOWN)
+  visibilityStatus      VisibilityStatus    @default(UNKNOWN)
+  promotionStatus       PromotionStatus     @default(UNKNOWN)
+  revenueAvailability   RevenueAvailability @default(UNKNOWN)
+  recommendedNextAction String?
+  lastVerifiedAt        DateTime?
+  firstSeenAt           DateTime            @default(now())
+  archivedAt            DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  agency                Agency              @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client                Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  publisherAccount      PublisherAccount?   @relation(fields: [publisherAccountId], references: [id], onDelete: SetNull)
+  keywords              ContentKeyword[]
+  permissions           ContentPermission[]
+  importRows            ImportRow[]
+
+  @@unique([clientId, dedupeHash])
+  @@index([agencyId, clientId, platform])
+  @@index([agencyId, updatedAt])
+}
+
+model ImportBatch {
+  id               String       @id @default(uuid()) @db.Uuid
+  agencyId         String       @db.Uuid
+  clientId         String       @db.Uuid
+  idempotencyKey   String       @db.Char(64)
+  originalFilename String
+  status           ImportStatus @default(PREVIEWED)
+  totalRows        Int          @default(0)
+  validRows        Int          @default(0)
+  duplicateRows    Int          @default(0)
+  rejectedRows     Int          @default(0)
+  importedRows     Int          @default(0)
+  createdById      String       @db.Uuid
+  createdAt        DateTime     @default(now())
+  completedAt      DateTime?
+  agency           Agency       @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client           Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  rows             ImportRow[]
+
+  @@unique([agencyId, clientId, idempotencyKey])
+  @@index([agencyId, clientId, createdAt])
+}
+
+model ImportRow {
+  id              String          @id @default(uuid()) @db.Uuid
+  importBatchId   String          @db.Uuid
+  rowNumber       Int
+  status          ImportRowStatus
+  rawData         Json
+  normalizedData  Json?
+  rejectionReason String?
+  dedupeHash      String?         @db.Char(64)
+  contentId       String?         @db.Uuid
+  createdAt       DateTime        @default(now())
+  importBatch     ImportBatch     @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  content         Content?        @relation(fields: [contentId], references: [id], onDelete: SetNull)
+
+  @@unique([importBatchId, rowNumber])
+  @@index([importBatchId, status])
+  @@index([contentId])
+}
+
+model Keyword {
+  id               String           @id @default(uuid()) @db.Uuid
+  agencyId         String           @db.Uuid
+  normalizedPhrase String
+  displayPhrase    String
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  contents         ContentKeyword[]
+  agency           Agency           @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, normalizedPhrase])
+  @@index([agencyId])
+}
+
+model ContentKeyword {
+  id             String     @id @default(uuid()) @db.Uuid
+  contentId      String     @db.Uuid
+  keywordId      String     @db.Uuid
+  countryCode    String     @db.VarChar(2)
+  languageCode   String     @db.VarChar(10)
+  device         DeviceType
+  active         Boolean    @default(true)
+  maxResultDepth Int        @default(10)
+  lastCheckedAt  DateTime?
+  nextCheckAt    DateTime?
+  content        Content    @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  keyword        Keyword    @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, keywordId, countryCode, languageCode, device])
+  @@index([active, nextCheckAt])
+}
+
+model ContentPermission {
+  id                 String            @id @default(uuid()) @db.Uuid
+  contentId          String            @db.Uuid
+  publisherAccountId String?           @db.Uuid
+  capabilityCode     String
+  status             PermissionStatus  @default(UNKNOWN)
+  evidenceSource     String?
+  verifiedAt         DateTime?
+  expiresAt          DateTime?
+  content            Content           @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  publisherAccount   PublisherAccount? @relation(fields: [publisherAccountId], references: [id], onDelete: SetNull)
+
+  @@unique([contentId, publisherAccountId, capabilityCode])
+}
+
+model MonitoringBudget {
+  id             String       @id @default(uuid()) @db.Uuid
+  agencyId       String       @db.Uuid
+  clientId       String?      @db.Uuid
+  scope          BudgetScope
+  period         BudgetPeriod
+  currency       String       @db.VarChar(3)
+  softLimitMinor BigInt
+  hardLimitMinor BigInt
+  maxOperations  Int?
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  agency         Agency       @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client         Client?      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, clientId, active])
+}
+
+model ProviderUsageLedger {
+  id             String   @id @default(uuid()) @db.Uuid
+  agencyId       String   @db.Uuid
+  clientId       String?  @db.Uuid
+  providerCode   String
+  operationType  String
+  idempotencyKey String   @unique
+  units          Int      @default(1)
+  estimatedMinor BigInt
+  actualMinor    BigInt?
+  currency       String   @db.VarChar(3)
+  occurredAt     DateTime @default(now())
+
+  @@index([agencyId, clientId, occurredAt])
+}
+
+model StatusHistory {
+  id              String         @id @default(uuid()) @db.Uuid
+  agencyId        String         @db.Uuid
+  entityType      String
+  entityId        String
+  statusDimension String
+  previousValue   String?
+  newValue        String
+  reason          String?
+  evidenceType    String?
+  evidenceId      String?
+  actorType       AuditActorType
+  actorId         String?
+  correlationId   String?
+  occurredAt      DateTime       @default(now())
+  agency          Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+
+  @@index([agencyId, entityType, entityId, occurredAt])
+}
+
+model AuditEvent {
+  id            String         @id @default(uuid()) @db.Uuid
+  agencyId      String         @db.Uuid
+  actorType     AuditActorType
+  actorUserId   String?        @db.Uuid
+  action        String
+  targetType    String
+  targetId      String?
+  sanitizedData Json?
+  ipHash        String?        @db.Char(64)
+  userAgent     String?        @db.VarChar(500)
+  correlationId String?
+  occurredAt    DateTime       @default(now())
+  agency        Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  actorUser     User?          @relation("AuditUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([agencyId, occurredAt])
+  @@index([agencyId, targetType, targetId])
+}
