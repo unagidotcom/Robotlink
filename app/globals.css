@@ -50,6 +50,8 @@ button, input, select, textarea { font: inherit; }
 .account strong { overflow: hidden; text-overflow: ellipsis; font-size: .85rem; }
 .text-button { width: max-content; border: 0; background: none; color: var(--signal); padding: 8px 0 0; cursor: pointer; }
 .workspace { width: 100%; max-width: 1500px; padding: 46px clamp(22px, 4vw, 64px) 80px; margin: 0 auto; }
+.staging-notice { margin-bottom: 24px; padding: 12px 16px; border: 1px solid #75682c; background: #29240f; color: #e9dda1; font-size: .85rem; }
+.staging-notice strong { margin-right: 8px; }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; margin-bottom: 42px; }
 .page-header h1 { font-size: clamp(2.5rem, 5vw, 5rem); margin: 12px 0; max-width: 850px; }
 .page-header p { margin: 0; line-height: 1.5; }

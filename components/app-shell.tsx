@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Viewer } from "@/lib/dal/viewer";
 import { LogoutButton } from "./logout-button";
 
-export function AppShell({ viewer, children }: { viewer: Viewer; children: React.ReactNode }) {
+export function AppShell({ viewer, children, workersEnabled }: { viewer: Viewer; children: React.ReactNode; workersEnabled: boolean }) {
   return <div className="app-frame">
     <aside className="sidebar">
       <Link href="/dashboard" className="brand"><span>AV</span> Article Visibility</Link>
@@ -12,6 +12,6 @@ export function AppShell({ viewer, children }: { viewer: Viewer; children: React
       </nav>
       <div className="account"><small>{viewer.agencyName}</small><strong>{viewer.email}</strong><span>{viewer.role.toLowerCase()}</span><LogoutButton /></div>
     </aside>
-    <main className="workspace">{children}</main>
+    <main className="workspace">{!workersEnabled && <div className="staging-notice" role="status"><strong>Queue-only mode</strong> Inspection and ranking jobs will remain waiting until separate workers are deployed.</div>}{children}</main>
   </div>;
 }

@@ -1,0 +1,7 @@
+.env
+.env.*
+.neon
+.neon/
+coverage/
+docs/
+tests/

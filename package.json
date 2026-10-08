@@ -15,6 +15,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:validate": "prisma validate",
+    "postinstall": "prisma generate",
     "bootstrap:owner": "tsx scripts/bootstrap-owner.ts"
     ,"worker:inspection": "tsx scripts/inspection-worker.ts",
     "worker:ranking": "tsx scripts/ranking-worker.ts"
