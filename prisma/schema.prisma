@@ -153,14 +153,40 @@ enum ImportRowStatus {
   IMPORTED
 }
 
+enum InspectionJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  DEAD_LETTER
+}
+
+enum InspectionAttemptStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  LEASE_EXPIRED
+}
+
+enum InspectionOutcome {
+  ACCESSIBLE
+  RESTRICTED
+  AUTH_REQUIRED
+  TEMPORARILY_UNAVAILABLE
+  PERMANENTLY_UNAVAILABLE
+  ERROR
+  UNKNOWN
+}
+
 model Agency {
-  id                String             @id @default(uuid()) @db.Uuid
+  id                String                @id @default(uuid()) @db.Uuid
   name              String
-  slug              String             @unique
-  defaultTimezone   String             @default("UTC")
-  defaultCurrency   String             @default("USD") @db.VarChar(3)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  slug              String                @unique
+  defaultTimezone   String                @default("UTC")
+  defaultCurrency   String                @default("USD") @db.VarChar(3)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
   memberships       AgencyMembership[]
   clients           Client[]
   publisherAccounts PublisherAccount[]
@@ -170,20 +196,23 @@ model Agency {
   auditEvents       AuditEvent[]
   statusHistory     StatusHistory[]
   importBatches     ImportBatch[]
+  inspectionJobs    InspectionJob[]
+  inspections       TechnicalInspection[]
 }
 
 model User {
-  id           String             @id @default(uuid()) @db.Uuid
-  email        String             @unique
-  displayName  String?
-  passwordHash String
-  disabledAt   DateTime?
-  lastLoginAt  DateTime?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  memberships  AgencyMembership[]
-  sessions     Session[]
-  auditEvents  AuditEvent[]       @relation("AuditUser")
+  id                   String             @id @default(uuid()) @db.Uuid
+  email                String             @unique
+  displayName          String?
+  passwordHash         String
+  disabledAt           DateTime?
+  lastLoginAt          DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  memberships          AgencyMembership[]
+  sessions             Session[]
+  auditEvents          AuditEvent[]       @relation("AuditUser")
+  requestedInspections InspectionJob[]    @relation("InspectionRequestedBy")
 }
 
 model AgencyMembership {
@@ -225,22 +254,24 @@ model LoginThrottle {
 }
 
 model Client {
-  id                  String             @id @default(uuid()) @db.Uuid
-  agencyId            String             @db.Uuid
+  id                  String                @id @default(uuid()) @db.Uuid
+  agencyId            String                @db.Uuid
   name                String
   externalReference   String?
-  defaultCountryCode  String?            @db.VarChar(2)
-  defaultLanguageCode String?            @db.VarChar(10)
-  defaultDevice       DeviceType         @default(DESKTOP)
-  defaultCurrency     String             @default("USD") @db.VarChar(3)
-  active              Boolean            @default(true)
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  agency              Agency             @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  defaultCountryCode  String?               @db.VarChar(2)
+  defaultLanguageCode String?               @db.VarChar(10)
+  defaultDevice       DeviceType            @default(DESKTOP)
+  defaultCurrency     String                @default("USD") @db.VarChar(3)
+  active              Boolean               @default(true)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  agency              Agency                @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   contents            Content[]
   publisherAccounts   PublisherAccount[]
   budgets             MonitoringBudget[]
   importBatches       ImportBatch[]
+  inspectionJobs      InspectionJob[]
+  inspections         TechnicalInspection[]
 
   @@unique([agencyId, name])
   @@index([agencyId, active])
@@ -283,41 +314,157 @@ model PlatformCapability {
 }
 
 model Content {
-  id                    String              @id @default(uuid()) @db.Uuid
-  agencyId              String              @db.Uuid
-  clientId              String              @db.Uuid
-  publisherAccountId    String?             @db.Uuid
-  originalUrl           String              @db.Text
-  normalizedUrl         String              @db.Text
-  dedupeHash            String              @db.Char(64)
-  normalizationVersion  Int                 @default(1)
+  id                    String                @id @default(uuid()) @db.Uuid
+  agencyId              String                @db.Uuid
+  clientId              String                @db.Uuid
+  publisherAccountId    String?               @db.Uuid
+  originalUrl           String                @db.Text
+  normalizedUrl         String                @db.Text
+  dedupeHash            String                @db.Char(64)
+  normalizationVersion  Int                   @default(1)
   platform              PlatformCode
   contentType           ContentType
   title                 String?
-  description           String?             @db.Text
+  description           String?               @db.Text
   publishedAt           DateTime?
-  publicationStatus     PublicationStatus   @default(UNKNOWN)
-  technicalStatus       TechnicalStatus     @default(UNKNOWN)
-  indexingEvidence      EvidenceStatus      @default(UNKNOWN)
-  visibilityStatus      VisibilityStatus    @default(UNKNOWN)
-  promotionStatus       PromotionStatus     @default(UNKNOWN)
-  revenueAvailability   RevenueAvailability @default(UNKNOWN)
+  publicationStatus     PublicationStatus     @default(UNKNOWN)
+  technicalStatus       TechnicalStatus       @default(UNKNOWN)
+  indexingEvidence      EvidenceStatus        @default(UNKNOWN)
+  visibilityStatus      VisibilityStatus      @default(UNKNOWN)
+  promotionStatus       PromotionStatus       @default(UNKNOWN)
+  revenueAvailability   RevenueAvailability   @default(UNKNOWN)
   recommendedNextAction String?
   lastVerifiedAt        DateTime?
-  firstSeenAt           DateTime            @default(now())
+  firstSeenAt           DateTime              @default(now())
   archivedAt            DateTime?
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  agency                Agency              @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-  client                Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  publisherAccount      PublisherAccount?   @relation(fields: [publisherAccountId], references: [id], onDelete: SetNull)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  agency                Agency                @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client                Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  publisherAccount      PublisherAccount?     @relation(fields: [publisherAccountId], references: [id], onDelete: SetNull)
   keywords              ContentKeyword[]
   permissions           ContentPermission[]
   importRows            ImportRow[]
+  inspectionJobs        InspectionJob[]
+  inspections           TechnicalInspection[]
 
   @@unique([clientId, dedupeHash])
   @@index([agencyId, clientId, platform])
   @@index([agencyId, updatedAt])
+}
+
+model InspectionJob {
+  id                String                @id @default(uuid()) @db.Uuid
+  agencyId          String                @db.Uuid
+  clientId          String                @db.Uuid
+  contentId         String                @db.Uuid
+  requestedById     String?               @db.Uuid
+  idempotencyKey    String                @unique @db.Char(64)
+  origin            String                @db.VarChar(500)
+  status            InspectionJobStatus   @default(PENDING)
+  priority          Int                   @default(0)
+  attemptCount      Int                   @default(0)
+  maxAttempts       Int                   @default(3)
+  availableAt       DateTime              @default(now())
+  leaseOwner        String?               @db.VarChar(200)
+  leaseExpiresAt    DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  lastErrorCategory String?               @db.VarChar(80)
+  lastErrorMessage  String?               @db.VarChar(500)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  agency            Agency                @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client            Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  content           Content               @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  requestedBy       User?                 @relation("InspectionRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  attempts          InspectionAttempt[]
+  inspections       TechnicalInspection[]
+
+  @@index([status, availableAt, priority])
+  @@index([agencyId, clientId, status, createdAt])
+  @@index([contentId, createdAt])
+  @@index([origin, status, availableAt])
+}
+
+model InspectionAttempt {
+  id             String                  @id @default(uuid()) @db.Uuid
+  jobId          String                  @db.Uuid
+  attemptNumber  Int
+  workerId       String                  @db.VarChar(200)
+  status         InspectionAttemptStatus @default(RUNNING)
+  leaseExpiresAt DateTime
+  startedAt      DateTime                @default(now())
+  finishedAt     DateTime?
+  errorCategory  String?                 @db.VarChar(80)
+  errorMessage   String?                 @db.VarChar(500)
+  job            InspectionJob           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  inspection     TechnicalInspection?
+
+  @@unique([jobId, attemptNumber])
+  @@index([status, leaseExpiresAt])
+}
+
+model TechnicalInspection {
+  id                     String               @id @default(uuid()) @db.Uuid
+  agencyId               String               @db.Uuid
+  clientId               String               @db.Uuid
+  contentId              String               @db.Uuid
+  jobId                  String               @db.Uuid
+  attemptId              String               @unique @db.Uuid
+  source                 String               @default("internal-http-inspector") @db.VarChar(100)
+  requestedUrl           String               @db.Text
+  finalUrl               String?              @db.Text
+  outcome                InspectionOutcome
+  derivedTechnicalStatus TechnicalStatus
+  httpStatus             Int?
+  contentType            String?              @db.VarChar(255)
+  contentLength          Int?
+  title                  String?              @db.Text
+  metaDescription        String?              @db.Text
+  canonicalUrl           String?              @db.Text
+  metaRobots             String[]
+  xRobotsTag             String[]
+  robotsAllowed          Boolean?
+  robotsRule             String?              @db.Text
+  rawObservations        Json
+  errorCategory          String?              @db.VarChar(80)
+  errorMessage           String?              @db.VarChar(500)
+  inspectedAt            DateTime             @default(now())
+  expiresAt              DateTime
+  createdAt              DateTime             @default(now())
+  agency                 Agency               @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  client                 Client               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  content                Content              @relation(fields: [contentId], references: [id], onDelete: Restrict)
+  job                    InspectionJob        @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  attempt                InspectionAttempt    @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  redirects              InspectionRedirect[]
+
+  @@index([agencyId, clientId, inspectedAt])
+  @@index([contentId, inspectedAt])
+}
+
+model InspectionRedirect {
+  id           String              @id @default(uuid()) @db.Uuid
+  inspectionId String              @db.Uuid
+  sequence     Int
+  fromUrl      String              @db.Text
+  toUrl        String              @db.Text
+  httpStatus   Int
+  inspection   TechnicalInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  @@unique([inspectionId, sequence])
+}
+
+model InspectionOriginState {
+  origin            String    @id @db.VarChar(500)
+  nextAllowedAt     DateTime  @default(now())
+  lastRequestedAt   DateTime?
+  consecutiveErrors Int       @default(0)
+  updatedAt         DateTime  @updatedAt
+
+  @@index([nextAllowedAt])
 }
 
 model ImportBatch {

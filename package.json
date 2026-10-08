@@ -16,6 +16,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:validate": "prisma validate",
     "bootstrap:owner": "tsx scripts/bootstrap-owner.ts"
+    ,"worker:inspection": "tsx scripts/inspection-worker.ts"
   },
   "dependencies": {
     "@prisma/client": "6.12.0",

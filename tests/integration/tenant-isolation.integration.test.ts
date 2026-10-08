@@ -15,6 +15,7 @@ describe.skipIf(!enabled)("PostgreSQL tenant isolation integration", () => {
   afterAll(async () => {
     if (!prisma) return;
     await prisma.agency.deleteMany({ where: { slug: { startsWith: `integration-${suffix}` } } });
+    await prisma.user.deleteMany({ where: { email: { startsWith: `sessions-${suffix}` } } });
     await prisma.$disconnect();
   });
 
@@ -45,11 +46,12 @@ describe.skipIf(!enabled)("PostgreSQL tenant isolation integration", () => {
     await prisma.agencyMembership.create({ data: { agencyId: agency.id, userId: user.id, role: "OWNER" } });
     const { getUserForSessionToken, hashSessionToken } = await import("@/lib/auth/session");
     const create = (token: string, data: { expiresAt: Date; endedAt?: Date }) => prisma.session.create({ data: { userId: user.id, tokenHash: hashSessionToken(token), ...data } });
-    await create("revoked-token", { expiresAt: new Date(Date.now() + 60_000), endedAt: new Date() });
-    await create("expired-token", { expiresAt: new Date(Date.now() - 60_000) });
-    expect(await getUserForSessionToken("revoked-token")).toBeNull();
-    expect(await getUserForSessionToken("expired-token")).toBeNull();
-    const active = "active-disabled-token";
+    const revoked = `revoked-${suffix}`; const expired = `expired-${suffix}`;
+    await create(revoked, { expiresAt: new Date(Date.now() + 60_000), endedAt: new Date() });
+    await create(expired, { expiresAt: new Date(Date.now() - 60_000) });
+    expect(await getUserForSessionToken(revoked)).toBeNull();
+    expect(await getUserForSessionToken(expired)).toBeNull();
+    const active = `active-disabled-${suffix}`;
     await create(active, { expiresAt: new Date(Date.now() + 60_000) });
     await prisma.user.update({ where: { id: user.id }, data: { disabledAt: new Date() } });
     expect(await getUserForSessionToken(active)).toBeNull();

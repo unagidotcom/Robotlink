@@ -44,6 +44,8 @@ export async function getContentDetail(viewer: Viewer, id: string) {
       publisherAccount: { select: { id: true, displayName: true, platform: true } },
       keywords: { include: { keyword: true }, orderBy: { keyword: { displayPhrase: "asc" } } },
       permissions: true,
+      inspectionJobs: { orderBy: { createdAt: "desc" }, take: 10, include: { attempts: { orderBy: { attemptNumber: "desc" }, take: 5 } } },
+      inspections: { orderBy: { inspectedAt: "desc" }, take: 20, include: { redirects: { orderBy: { sequence: "asc" } } } },
     },
   });
 }

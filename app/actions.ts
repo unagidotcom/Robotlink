@@ -11,8 +11,32 @@ import { clientInputSchema, contentInputSchema } from "@/lib/content/validation"
 import { NORMALIZATION_VERSION, normalizeContentUrl, normalizeKeyword } from "@/lib/content/normalize";
 import { csvMappingSchema, validateImportRow, type ValidatedImportRow } from "@/lib/imports/validation";
 import { MAX_CSV_BYTES, parseCsv } from "@/lib/imports/csv";
+import { getInspectionConfig } from "@/lib/inspection/config";
+import { enqueueInspection } from "@/lib/inspection/queue";
 
 export type ActionState = { ok?: boolean; error?: string; batchId?: string };
+
+export async function enqueueInspectionAction(contentId: string, agencyId: string): Promise<void> {
+  const viewer = await requireViewer(agencyId); requirePermission(viewer.role, "inspection:write");
+  const content = await prisma.content.findFirst({ where: { id: contentId, agencyId: viewer.agencyId, archivedAt: null }, select: { id: true, clientId: true } });
+  if (!content) throw new Error("NOT_FOUND");
+  await enqueueInspection({ agencyId: viewer.agencyId, clientId: content.clientId, contentId, requestedById: viewer.userId }, getInspectionConfig());
+  await prisma.auditEvent.create({ data: { agencyId: viewer.agencyId, actorType: "USER", actorUserId: viewer.userId,
+    action: "inspection.queued", targetType: "content", targetId: contentId } });
+  revalidatePath(`/content/${contentId}`);
+}
+
+export async function retryInspectionAction(contentId: string, agencyId: string): Promise<void> {
+  const viewer = await requireViewer(agencyId); requirePermission(viewer.role, "inspection:write");
+  const content = await prisma.content.findFirst({ where: { id: contentId, agencyId: viewer.agencyId, archivedAt: null }, select: { id: true, clientId: true } });
+  if (!content) throw new Error("NOT_FOUND");
+  const active = await prisma.inspectionJob.findFirst({ where: { contentId, agencyId: viewer.agencyId, status: { in: ["PENDING", "RUNNING"] } }, select: { id: true } });
+  if (active) { revalidatePath(`/content/${contentId}`); return; }
+  await enqueueInspection({ agencyId: viewer.agencyId, clientId: content.clientId, contentId, requestedById: viewer.userId, force: true }, getInspectionConfig());
+  await prisma.auditEvent.create({ data: { agencyId: viewer.agencyId, actorType: "USER", actorUserId: viewer.userId,
+    action: "inspection.retry_queued", targetType: "content", targetId: contentId } });
+  revalidatePath(`/content/${contentId}`);
+}
 
 function formObject(formData: FormData): Record<string, string> {
   return Object.fromEntries([...formData.entries()].filter(([, value]) => typeof value === "string")) as Record<string, string>;

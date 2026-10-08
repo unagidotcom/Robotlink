@@ -1,12 +1,12 @@
 # Article SEO Visibility Platform
 
-Phase A establishes the secure, tenant-aware foundation. Phase B1 adds authenticated client management, content CRUD, conservative URL normalization, CSV preview/import, rejection reporting, and responsive operational views.
+Phase A establishes the secure, tenant-aware foundation. Phase B1 adds content management and imports. Phase B2 adds a durable technical-inspection queue, a separately runnable SSRF-hardened worker, immutable evidence, and inspection history in the authenticated content view.
 
 ## Current boundaries
 
-Included: authentication, roles, agency/client isolation, audit/status history, content and platform foundations, provider contracts, monitoring budgets, content management, and idempotent CSV imports.
+Included: authentication, roles, agency/client isolation, audit/status history, content management, idempotent CSV imports, and conservative HTTP/robots/canonical/noindex diagnostics.
 
-Not included: paid ranking calls, technical crawling, publishing automation, promotion submissions, engagement synchronization, or revenue synchronization.
+Not included: paid ranking calls, indexing submissions, publishing automation, promotion submissions, engagement synchronization, or revenue synchronization. A successful inspection never establishes search-engine indexing.
 
 ## Local setup
 
@@ -19,6 +19,7 @@ Requirements: Node.js 20.9+ and PostgreSQL 15+.
 5. Set the three `BOOTSTRAP_*` variables and run `npm run bootstrap:owner` once.
 6. Remove the bootstrap password from the environment.
 7. Run `npm run dev`.
+8. In a separate process, run `npm run worker:inspection` when technical jobs should be processed.
 
 ## Verification
 
@@ -41,3 +42,5 @@ The test database must already have the current migration applied and must be di
 See `docs/architecture.md`, `docs/security.md`, and `docs/deployment.md` before extending the system.
 
 Authenticated routes are `/dashboard`, `/clients`, `/content`, and `/imports`. Evidence-based statuses begin as `UNKNOWN`; content creation and import never promote them.
+
+The web process only enqueues inspections. The worker claims jobs atomically, applies global/client/origin limits, recovers expired leases, and retries transient failures with bounded backoff. Deploy at least one worker process separately from the web process; do not expose it as a public HTTP endpoint.

@@ -104,6 +104,15 @@ td { padding: 16px; border-top: 1px solid var(--line); vertical-align: middle; f
 .url-cell { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .table-note { padding: 14px 18px; color: var(--muted); border-top: 1px solid var(--line); }
 .compact article { min-height: 100px; }
+.inspection-actions { display: flex; align-items: center; gap: 16px; padding: 16px 18px; margin-bottom: 24px; border: 1px solid var(--line); background: #121411; }
+.inspection-actions span { color: var(--muted); font-size: .8rem; }
+.inspection-list article { padding: 20px 22px; border-bottom: 1px solid var(--line); }
+.inspection-list small { display: block; color: var(--muted); margin-top: 6px; }
+.inspection-list dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.inspection-list dl div { min-width: 0; }
+.inspection-list dt { color: var(--muted); font-size: .7rem; text-transform: uppercase; }
+.inspection-list dd { margin: 4px 0 0; overflow-wrap: anywhere; font-size: .8rem; }
+.panel-action { padding: 16px 22px; }
 
 @media (max-width: 960px) {
   .app-frame { grid-template-columns: 1fr; }
