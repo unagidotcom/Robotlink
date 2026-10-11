@@ -9,8 +9,9 @@ import { requireViewer } from "@/lib/dal/viewer";
 import { requirePermission } from "@/lib/auth/authorization";
 import { clientInputSchema, contentInputSchema } from "@/lib/content/validation";
 import { NORMALIZATION_VERSION, normalizeContentUrl, normalizeKeyword } from "@/lib/content/normalize";
-import { csvMappingSchema, validateImportRow, type ValidatedImportRow } from "@/lib/imports/validation";
+import { csvMappingSchema, type CsvMapping, type ValidatedImportRow } from "@/lib/imports/validation";
 import { MAX_CSV_BYTES, parseCsv } from "@/lib/imports/csv";
+import { buildPreviewRows, parsePastedUrls, type ImportSourceRow } from "@/lib/imports/preview";
 import { getInspectionConfig } from "@/lib/inspection/config";
 import { enqueueInspection, scheduleImportedInspections } from "@/lib/inspection/queue";
 import { getRankingConfig } from "@/lib/ranking/config";
@@ -204,8 +205,38 @@ export async function archiveContentAction(id: string, agencyId: string): Promis
   redirect("/content");
 }
 
-function importJson(row: ValidatedImportRow): Prisma.InputJsonValue {
-  return { ...row, normalized: row.normalized } as unknown as Prisma.InputJsonValue;
+async function createImportPreview(input: {
+  agencyId: string;
+  clientId: string;
+  createdById: string;
+  originalFilename: string;
+  idempotencyKey: string;
+  sourceRows: ImportSourceRow[];
+  mapping: CsvMapping;
+  defaults: { country: string; language: string; device: "DESKTOP" | "MOBILE" };
+}): Promise<string> {
+  const existingBatch = await prisma.importBatch.findUnique({
+    where: { agencyId_clientId_idempotencyKey: { agencyId: input.agencyId, clientId: input.clientId, idempotencyKey: input.idempotencyKey } },
+    select: { id: true },
+  });
+  if (existingBatch) return existingBatch.id;
+
+  const existingHashes = new Set((await prisma.content.findMany({
+    where: { clientId: input.clientId, agencyId: input.agencyId }, select: { dedupeHash: true },
+  })).map((item) => item.dedupeHash));
+  const rows = buildPreviewRows(input.sourceRows, input.mapping, input.defaults, existingHashes);
+  const counts = {
+    valid: rows.filter((row) => row.status === "VALID").length,
+    duplicate: rows.filter((row) => row.status === "DUPLICATE").length,
+    rejected: rows.filter((row) => row.status === "REJECTED").length,
+  };
+  const batch = await prisma.importBatch.create({ data: {
+    agencyId: input.agencyId, clientId: input.clientId, idempotencyKey: input.idempotencyKey,
+    originalFilename: input.originalFilename.slice(0, 255), createdById: input.createdById,
+    totalRows: rows.length, validRows: counts.valid, duplicateRows: counts.duplicate, rejectedRows: counts.rejected,
+    rows: { createMany: { data: rows } },
+  } });
+  return batch.id;
 }
 
 export async function previewImportAction(_state: ActionState, formData: FormData): Promise<ActionState> {
@@ -231,33 +262,36 @@ export async function previewImportAction(_state: ActionState, formData: FormDat
   try { document = parseCsv(bytes.toString("utf8")); }
   catch (error) { return { error: error instanceof Error ? error.message : "Invalid CSV" }; }
   if (!document.headers.includes(mapping.data.url)) return { error: "Mapped URL column was not found" };
-  const idempotencyKey = createHash("sha256").update(bytes).update(JSON.stringify(mapping.data)).digest("hex");
-  const existingBatch = await prisma.importBatch.findUnique({ where: { agencyId_clientId_idempotencyKey: { agencyId, clientId, idempotencyKey } } });
-  if (existingBatch) return { ok: true, batchId: existingBatch.id };
-  const seen = new Set<string>();
-  const existingHashes = new Set((await prisma.content.findMany({ where: { clientId, agencyId }, select: { dedupeHash: true } })).map((item) => item.dedupeHash));
-  const rows = document.rows.map((rawData, index) => {
-    try {
-      const normalizedData = validateImportRow(rawData, mapping.data, {
-        country: client.defaultCountryCode ?? "US", language: client.defaultLanguageCode ?? "en", device: client.defaultDevice,
-      });
-      const duplicate = existingHashes.has(normalizedData.normalized.dedupeHash) || seen.has(normalizedData.normalized.dedupeHash);
-      seen.add(normalizedData.normalized.dedupeHash);
-      return { rowNumber: index + 2, status: duplicate ? "DUPLICATE" as const : "VALID" as const,
-        rawData: rawData as Prisma.InputJsonValue, normalizedData: importJson(normalizedData), dedupeHash: normalizedData.normalized.dedupeHash,
-        rejectionReason: duplicate ? "Duplicate URL within this client" : null };
-    } catch (error) {
-      return { rowNumber: index + 2, status: "REJECTED" as const, rawData: rawData as Prisma.InputJsonValue,
-        normalizedData: Prisma.JsonNull, dedupeHash: null, rejectionReason: error instanceof Error ? error.message : "Invalid row" };
-    }
+  const batchId = await createImportPreview({
+    agencyId, clientId, createdById: viewer.userId, originalFilename: file.name,
+    idempotencyKey: createHash("sha256").update(bytes).update(JSON.stringify(mapping.data)).digest("hex"),
+    sourceRows: document.rows.map((rawData, index) => ({ rowNumber: index + 2, rawData })), mapping: mapping.data,
+    defaults: { country: client.defaultCountryCode ?? "US", language: client.defaultLanguageCode ?? "en", device: client.defaultDevice },
   });
-  const counts = { valid: rows.filter((row) => row.status === "VALID").length, duplicate: rows.filter((row) => row.status === "DUPLICATE").length, rejected: rows.filter((row) => row.status === "REJECTED").length };
-  const batch = await prisma.importBatch.create({ data: {
-    agencyId, clientId, idempotencyKey, originalFilename: file.name.slice(0, 255), createdById: viewer.userId,
-    totalRows: rows.length, validRows: counts.valid, duplicateRows: counts.duplicate, rejectedRows: counts.rejected,
-    rows: { createMany: { data: rows } },
-  } });
-  redirect(`/imports/${batch.id}`);
+  redirect(`/imports/${batchId}`);
+}
+
+export async function previewPastedUrlsAction(_state: ActionState, formData: FormData): Promise<ActionState> {
+  const agencyId = String(formData.get("agencyId") ?? "");
+  const clientId = String(formData.get("clientId") ?? "");
+  const viewer = await requireViewer(agencyId);
+  requirePermission(viewer.role, "content:write");
+  const client = await prisma.client.findFirst({ where: { id: clientId, agencyId: viewer.agencyId, active: true } });
+  if (!client) return { error: "Client not found" };
+
+  let sourceRows: ImportSourceRow[];
+  try { sourceRows = parsePastedUrls(String(formData.get("urls") ?? "")); }
+  catch (error) { return { error: error instanceof Error ? error.message : "Invalid URL list" }; }
+
+  const mapping = csvMappingSchema.parse({ url: "url" });
+  const canonicalInput = sourceRows.map((row) => String(row.rawData.url)).join("\n");
+  const batchId = await createImportPreview({
+    agencyId, clientId, createdById: viewer.userId, originalFilename: `Pasted URLs (${sourceRows.length})`,
+    idempotencyKey: createHash("sha256").update("paste\0").update(canonicalInput).digest("hex"),
+    sourceRows, mapping,
+    defaults: { country: client.defaultCountryCode ?? "US", language: client.defaultLanguageCode ?? "en", device: client.defaultDevice },
+  });
+  redirect(`/imports/${batchId}`);
 }
 
 export async function confirmImportAction(batchId: string, agencyId: string): Promise<void> {
@@ -282,7 +316,7 @@ export async function confirmImportAction(batchId: string, agencyId: string): Pr
         await syncKeywords(tx, content.id, viewer.agencyId, data.keywords, { countryCode: data.countryCode, languageCode: data.languageCode, device: data.device });
         await tx.importRow.update({ where: { id: row.id }, data: { status: "IMPORTED", contentId: content.id } });
         await tx.statusHistory.create({ data: { agencyId: viewer.agencyId, entityType: "content", entityId: content.id,
-          statusDimension: "publication", newValue: content.publicationStatus, reason: "CSV import", actorType: "USER", actorId: viewer.userId } });
+          statusDimension: "publication", newValue: content.publicationStatus, reason: "Confirmed import", actorType: "USER", actorId: viewer.userId } });
         imported += 1;
       } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
