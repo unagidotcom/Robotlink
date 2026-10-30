@@ -9,6 +9,9 @@ describe("authorization", () => {
     expect(hasPermission("VIEWER", "ranking:write")).toBe(false);
     expect(hasPermission("ANALYST", "ranking:write")).toBe(false);
     expect(hasPermission("STRATEGIST", "ranking:write")).toBe(true);
+    expect(hasPermission("VIEWER", "discovery:write")).toBe(false);
+    expect(hasPermission("ANALYST", "discovery:write")).toBe(false);
+    expect(hasPermission("STRATEGIST", "discovery:write")).toBe(true);
   });
 
   it("does not expose cross-agency resources", () => {

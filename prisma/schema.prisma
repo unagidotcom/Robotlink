@@ -211,14 +211,61 @@ enum RankingMatchClassification {
   NO_MATCH
 }
 
+enum DiscoveryEligibility {
+  UNKNOWN
+  THIRD_PARTY_URL
+  OWNED_AUTHORIZED_URL
+  UNSUPPORTED_OR_RESTRICTED
+}
+
+enum DiscoveryMethod {
+  EDITORIAL_REFERENCE
+  OWNED_CONTENT_HUB
+  RSS_ATOM
+  PUBLISHER_SUPPORTED
+  OTHER
+}
+
+enum DiscoveryCampaignStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum DiscoveryWorkflowStatus {
+  AWAITING_INSPECTION
+  ELIGIBLE_FOR_EDITORIAL_REVIEW
+  DRAFT_PREPARED
+  APPROVED
+  PUBLISHED_REFERENCE
+  MONITORING
+  INDEXING_UNVERIFIED
+}
+
+enum EditorialReviewStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+enum PublicationEvidenceStatus {
+  NOT_PUBLISHED
+  PROVIDED
+  VERIFIED
+  REJECTED
+}
+
 model Agency {
-  id                  String                @id @default(uuid()) @db.Uuid
+  id                  String                  @id @default(uuid()) @db.Uuid
   name                String
-  slug                String                @unique
-  defaultTimezone     String                @default("UTC")
-  defaultCurrency     String                @default("USD") @db.VarChar(3)
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  slug                String                  @unique
+  defaultTimezone     String                  @default("UTC")
+  defaultCurrency     String                  @default("USD") @db.VarChar(3)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
   memberships         AgencyMembership[]
   clients             Client[]
   publisherAccounts   PublisherAccount[]
@@ -232,6 +279,8 @@ model Agency {
   inspections         TechnicalInspection[]
   rankingJobs         RankingJob[]
   rankingObservations RankingObservation[]
+  discoveryCampaigns  DiscoveryCampaign[]
+  discoveryItems      DiscoveryCampaignItem[]
 }
 
 model User {
@@ -289,18 +338,18 @@ model LoginThrottle {
 }
 
 model Client {
-  id                  String                @id @default(uuid()) @db.Uuid
-  agencyId            String                @db.Uuid
+  id                  String                  @id @default(uuid()) @db.Uuid
+  agencyId            String                  @db.Uuid
   name                String
   externalReference   String?
-  defaultCountryCode  String?               @db.VarChar(2)
-  defaultLanguageCode String?               @db.VarChar(10)
-  defaultDevice       DeviceType            @default(DESKTOP)
-  defaultCurrency     String                @default("USD") @db.VarChar(3)
-  active              Boolean               @default(true)
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  agency              Agency                @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  defaultCountryCode  String?                 @db.VarChar(2)
+  defaultLanguageCode String?                 @db.VarChar(10)
+  defaultDevice       DeviceType              @default(DESKTOP)
+  defaultCurrency     String                  @default("USD") @db.VarChar(3)
+  active              Boolean                 @default(true)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  agency              Agency                  @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   contents            Content[]
   publisherAccounts   PublisherAccount[]
   budgets             MonitoringBudget[]
@@ -309,6 +358,8 @@ model Client {
   inspections         TechnicalInspection[]
   rankingJobs         RankingJob[]
   rankingObservations RankingObservation[]
+  discoveryCampaigns  DiscoveryCampaign[]
+  discoveryItems      DiscoveryCampaignItem[]
 
   @@unique([agencyId, name])
   @@index([agencyId, active])
@@ -351,44 +402,122 @@ model PlatformCapability {
 }
 
 model Content {
-  id                    String                @id @default(uuid()) @db.Uuid
-  agencyId              String                @db.Uuid
-  clientId              String                @db.Uuid
-  publisherAccountId    String?               @db.Uuid
-  originalUrl           String                @db.Text
-  normalizedUrl         String                @db.Text
-  dedupeHash            String                @db.Char(64)
-  normalizationVersion  Int                   @default(1)
+  id                    String                  @id @default(uuid()) @db.Uuid
+  agencyId              String                  @db.Uuid
+  clientId              String                  @db.Uuid
+  publisherAccountId    String?                 @db.Uuid
+  originalUrl           String                  @db.Text
+  normalizedUrl         String                  @db.Text
+  dedupeHash            String                  @db.Char(64)
+  normalizationVersion  Int                     @default(1)
   platform              PlatformCode
   contentType           ContentType
   title                 String?
-  description           String?               @db.Text
+  description           String?                 @db.Text
   publishedAt           DateTime?
-  publicationStatus     PublicationStatus     @default(UNKNOWN)
-  technicalStatus       TechnicalStatus       @default(UNKNOWN)
-  indexingEvidence      EvidenceStatus        @default(UNKNOWN)
-  visibilityStatus      VisibilityStatus      @default(UNKNOWN)
-  promotionStatus       PromotionStatus       @default(UNKNOWN)
-  revenueAvailability   RevenueAvailability   @default(UNKNOWN)
+  publicationStatus     PublicationStatus       @default(UNKNOWN)
+  technicalStatus       TechnicalStatus         @default(UNKNOWN)
+  indexingEvidence      EvidenceStatus          @default(UNKNOWN)
+  visibilityStatus      VisibilityStatus        @default(UNKNOWN)
+  promotionStatus       PromotionStatus         @default(UNKNOWN)
+  revenueAvailability   RevenueAvailability     @default(UNKNOWN)
   recommendedNextAction String?
   lastVerifiedAt        DateTime?
-  firstSeenAt           DateTime              @default(now())
+  firstSeenAt           DateTime                @default(now())
   archivedAt            DateTime?
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
-  agency                Agency                @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-  client                Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  publisherAccount      PublisherAccount?     @relation(fields: [publisherAccountId], references: [id], onDelete: SetNull)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  agency                Agency                  @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client                Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  publisherAccount      PublisherAccount?       @relation(fields: [publisherAccountId], references: [id], onDelete: SetNull)
   keywords              ContentKeyword[]
   permissions           ContentPermission[]
   importRows            ImportRow[]
   inspectionJobs        InspectionJob[]
   inspections           TechnicalInspection[]
   rankingObservations   RankingObservation[]
+  discoveryItems        DiscoveryCampaignItem[]
 
   @@unique([clientId, dedupeHash])
   @@index([agencyId, clientId, platform])
   @@index([agencyId, updatedAt])
+}
+
+model DiscoveryCampaign {
+  id          String                  @id @default(uuid()) @db.Uuid
+  agencyId    String                  @db.Uuid
+  clientId    String                  @db.Uuid
+  name        String                  @db.VarChar(200)
+  method      DiscoveryMethod
+  status      DiscoveryCampaignStatus @default(DRAFT)
+  createdById String                  @db.Uuid
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  agency      Agency                  @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client      Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  items       DiscoveryCampaignItem[]
+
+  @@unique([agencyId, clientId, name])
+  @@index([agencyId, clientId, status, createdAt])
+}
+
+model DiscoveryCampaignItem {
+  id                        String                    @id @default(uuid()) @db.Uuid
+  agencyId                  String                    @db.Uuid
+  clientId                  String                    @db.Uuid
+  campaignId                String                    @db.Uuid
+  contentId                 String                    @db.Uuid
+  eligibility               DiscoveryEligibility      @default(UNKNOWN)
+  eligibilityReason         String?                   @db.VarChar(500)
+  workflowStatus            DiscoveryWorkflowStatus   @default(AWAITING_INSPECTION)
+  reviewStatus              EditorialReviewStatus     @default(NOT_SUBMITTED)
+  publicationEvidenceStatus PublicationEvidenceStatus @default(NOT_PUBLISHED)
+  publicationUrl            String?                   @db.Text
+  publicationEvidence       Json?
+  approvedAt                DateTime?
+  publishedAt               DateTime?
+  monitoringStartedAt       DateTime?
+  firstSearchAppearanceAt   DateTime?
+  outcomeMeasuredAt         DateTime?
+  outcomeEvidence           Json?
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+  agency                    Agency                    @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client                    Client                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  campaign                  DiscoveryCampaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  content                   Content                   @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  editorialCandidate        EditorialCandidate?
+
+  @@unique([campaignId, contentId])
+  @@index([agencyId, clientId, workflowStatus])
+  @@index([contentId, createdAt])
+}
+
+model EditorialCandidate {
+  id                String                @id @default(uuid()) @db.Uuid
+  campaignItemId    String                @unique @db.Uuid
+  referenceKey      String                @unique @db.Char(64)
+  sourceUrl         String                @db.Text
+  sourceTitle       String                @db.Text
+  sourceDescription String?               @db.Text
+  sourcePublisher   String?               @db.VarChar(500)
+  sourceInspectedAt DateTime
+  draftReference    String                @db.Text
+  attributionLabel  String                @db.VarChar(500)
+  supportedClaims   Json
+  draftFingerprint  String                @db.Char(64)
+  preparedById      String                @db.Uuid
+  preparedAt        DateTime              @default(now())
+  reviewedById      String?               @db.Uuid
+  reviewedAt        DateTime?
+  reviewNote        String?               @db.VarChar(1000)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  campaignItem      DiscoveryCampaignItem @relation(fields: [campaignItemId], references: [id], onDelete: Cascade)
+
+  @@index([preparedAt])
 }
 
 model InspectionJob {

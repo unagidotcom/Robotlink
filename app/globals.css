@@ -130,6 +130,27 @@ td { padding: 16px; border-top: 1px solid var(--line); vertical-align: middle; f
 .ranking-controls form { display: flex; flex-wrap: wrap; gap: 7px; align-items: end; }
 .ranking-controls label { color: var(--muted); font-size: .7rem; }
 .ranking-controls input[type="number"], .ranking-controls select { width: 76px; display: block; margin-top: 3px; color: var(--ink); background: #10120f; border: 1px solid var(--line); padding: 6px; }
+.discovery-status-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-bottom: 28px; }
+.discovery-status-grid article { min-height: 96px; display: flex; flex-direction: column; justify-content: space-between; padding: 14px; border: 1px solid var(--line); background: var(--panel); }
+.discovery-status-grid span { color: var(--muted); font-size: .65rem; line-height: 1.35; text-transform: uppercase; }
+.discovery-status-grid strong { color: var(--signal); font: 500 1.8rem Georgia, serif; }
+.campaign-list a { display: flex; justify-content: space-between; gap: 20px; padding: 18px 22px; border-bottom: 1px solid var(--line); text-decoration: none; }
+.campaign-list a:hover strong { color: var(--signal); }
+.campaign-list small, .campaign-list span, .panel-heading small, .editorial-draft small { display: block; color: var(--muted); margin-top: 5px; font-size: .75rem; overflow-wrap: anywhere; }
+.discovery-add { margin-bottom: 24px; }
+.discovery-add-form { display: flex; align-items: end; gap: 12px; }
+.discovery-add-form label { flex: 1; }
+.discovery-items { display: grid; gap: 18px; }
+.discovery-item-body { padding: 20px 22px; }
+.discovery-item-body dl { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.discovery-item-body dt { color: var(--muted); font-size: .68rem; text-transform: uppercase; }
+.discovery-item-body dd { margin: 5px 0 0; font-size: .78rem; overflow-wrap: anywhere; }
+.editorial-draft { margin-top: 20px; padding: 18px; border: 1px solid var(--line); background: #11130f; }
+.editorial-draft blockquote { margin: 12px 0; font: 1.1rem/1.55 Georgia, serif; }
+.editorial-draft a { color: var(--signal); overflow-wrap: anywhere; }
+.review-form { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.review-form label { display: grid; gap: 7px; color: var(--muted); font-size: .75rem; }
+.review-form input { color: var(--ink); background: #10120f; border: 1px solid var(--line); border-radius: 7px; padding: 10px; }
 
 @media (max-width: 960px) {
   .app-frame { grid-template-columns: 1fr; }
@@ -151,4 +172,6 @@ td { padding: 16px; border-top: 1px solid var(--line); vertical-align: middle; f
   .stat-grid, .status-grid, .grid-form, .filter-bar { grid-template-columns: 1fr; }
   .span-2 { grid-column: auto; }
   .ranking-list article { grid-template-columns: 1fr; }
+  .discovery-status-grid, .discovery-item-body dl { grid-template-columns: 1fr 1fr; }
+  .discovery-add-form { align-items: stretch; flex-direction: column; }
 }

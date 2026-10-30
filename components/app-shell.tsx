@@ -8,7 +8,7 @@ export function AppShell({ viewer, children, workersEnabled }: { viewer: Viewer;
       <Link href="/dashboard" className="brand"><span>AV</span> Article Visibility</Link>
       <nav>
         <Link href="/dashboard">Overview</Link><Link href="/clients">Clients</Link>
-        <Link href="/content">Content</Link><Link href="/imports">Imports</Link>
+        <Link href="/content">Content</Link><Link href="/imports">Imports</Link><Link href="/discovery">Discovery</Link>
       </nav>
       <div className="account"><small>{viewer.agencyName}</small><strong>{viewer.email}</strong><span>{viewer.role.toLowerCase()}</span><LogoutButton /></div>
     </aside>
